@@ -1,0 +1,194 @@
+# Reusable build workflow - GitHub Actions equivalent of .ado/build-job-template.yml
+# Creates build metadata artifacts (git diff + orphaned job list) for a pillar.
+name: build
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        description: 'Full environment, e.g. CDL_DEV'
+        type: string
+        required: true
+      branchName:
+        type: string
+        required: true
+      commitID:
+        type: string
+        required: true
+      mode:
+        type: string
+        required: true
+      deployWithIon:
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  build:
+    name: Create build artifacts
+    runs-on: ubuntu-latest
+    # Environment provides the per-env Databricks credentials (ADO variable group `- group: <env>`).
+    environment: ${{ inputs.env }}
+    env:
+      # Pillar and Databricks repo folder are fixed for this pipeline.
+      # PILLAR is lowercase to match the CDL folder convention (config/jobs/<pillar>);
+      # an uppercased form (PILLAR_UPPER) is derived for tags and repo paths.
+      PILLAR: greenchain
+      REPO_NAME: ADB-bundles-cicd
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DBR_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DBR_CLIENT_SECRET }}
+    steps:
+      # Single checkout replaces ADO `checkout: CoreResources` + `checkout: self`
+      # (core resources and pillar code now live in the same repo).
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commitID }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute deployment variables
+        run: |
+          # Layer is fixed to CDL; the GitHub Environment is the short stage (DEV/QA/PROD),
+          # while Databricks-facing names keep the CDL_<stage> form.
+          LAYER=CDL
+          FULL_ENV="${LAYER}_${{ inputs.env }}"
+          PILLAR_UPPER=$(echo "$PILLAR" | tr '[:lower:]' '[:upper:]')
+          echo "PILLAR_UPPER=$PILLAR_UPPER" >> "$GITHUB_ENV"
+          echo "TAG=${FULL_ENV}_${PILLAR_UPPER}" >> "$GITHUB_ENV"
+          echo "REPO_FOLDER=/Repos/CodeRepo-${PILLAR_UPPER}/$REPO_NAME" >> "$GITHUB_ENV"
+
+      - name: Show deployment info
+        run: |
+          {
+            echo "### Build info"
+            echo "- Environment: ${{ inputs.env }}"
+            echo "- Pillar: $PILLAR"
+            echo "- Repository: $REPO_NAME"
+            echo "- Mode: ${{ inputs.mode }}"
+            echo "- Deploy With Ion: ${{ inputs.deployWithIon }}"
+            echo "- Branch: ${{ inputs.branchName }}"
+            echo "- Commit: ${{ inputs.commitID }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Use Python 3.x
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install databricks-cli
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+          sudo apt-get install -y jq
+          pip install wheel
+          pip install unittest-xml-reporting
+          databricks -v
+
+      - name: Show changes
+        run: |
+          line_break=$(printf '==%.0s' {1..50})
+          echo "Branch name ${{ inputs.branchName }}"
+          echo "$line_break"
+          echo "Repo path ${REPO_FOLDER}"
+          echo "$line_break"
+          last_tag_ind=$(git tag | grep "${TAG}" || true)
+          if [ "${#last_tag_ind}" == "0" ]
+          then
+            head_commit=$(databricks repos list -o json | jq -r --arg p "${REPO_FOLDER}" '.[] | select(.path==$p) | .head_commit_id')
+          else
+            head_commit="${TAG}"
+          fi
+
+          if [[ "${{ inputs.branchName }}" ]]; then
+            diff_file=$(git diff --name-status --diff-filter=AMRC "$head_commit" "${{ inputs.commitID }}" | grep -v '^R100' | grep -v '^C100' | grep "\.sql\|\.py\|\.ipynb" | awk '{$1=""; print substr($0,2)}' | tr '\n' ' ')
+            echo "$diff_file" > git_diff_file.txt
+            echo "Files with difference between commit $head_commit in Databricks"
+            echo "and commit: ${{ inputs.commitID }} in branch:"
+            git diff --name-status --diff-filter=AMDR "$head_commit" "${{ inputs.commitID }}" | grep "/$PILLAR/" || true
+            echo ""
+          fi
+
+      - name: List orphaned jobs
+        run: |
+          echo "Checking for orphaned jobs in Databricks workspace..."
+          echo "Repo path: ${REPO_FOLDER}"
+          echo "Pillar: $PILLAR"
+          echo ""
+
+          databricks_jobs=$(databricks jobs list -o json | jq -r --arg pillar "$PILLAR" '.[] | select(.settings.tags.ETL == ($pillar | ascii_upcase)) | .settings.name')
+
+          if [ -z "$databricks_jobs" ]; then
+            echo "No jobs found in Databricks with tag ETL=$PILLAR"
+            : > orphaned_jobs.txt
+            exit 0
+          fi
+
+          echo "Jobs found in Databricks with tag ETL=$PILLAR:"
+          echo "$databricks_jobs"
+          echo ""
+
+          jobs_folder="config/jobs/$PILLAR"
+
+          if [ ! -d "$jobs_folder" ]; then
+            echo "Warning: Jobs folder not found at $jobs_folder"
+            : > orphaned_jobs.txt
+            exit 0
+          fi
+
+          echo "Checking for orphaned jobs..."
+          orphaned_count=0
+          orphaned_jobs_file="orphaned_jobs.txt"
+          > "$orphaned_jobs_file"
+
+          IFS=$'\n' read -d '' -r -a jobs_array <<< "$databricks_jobs" || true
+
+          for job_name in "${jobs_array[@]}"; do
+            if [ -z "$job_name" ]; then
+              continue
+            fi
+
+            job_file_found=""
+            for json_file in "$jobs_folder"/*.json; do
+              if [ -f "$json_file" ]; then
+                file_job_name=$(jq -r '.name // empty' "$json_file" 2>/dev/null)
+                job_name="${job_name//$'\r'/}"
+                if [[ "$file_job_name" == "$job_name" ]]; then
+                  job_file_found="$json_file"
+                  break
+                fi
+              fi
+            done
+
+            if [ -z "$job_file_found" ]; then
+              echo "[ORPHANED] $job_name"
+              orphaned_count=$((orphaned_count + 1))
+              job_id=$(databricks jobs list -o json | jq -r --arg name "$job_name" '.[] | select(.settings.name == $name) | .job_id')
+              if [ -n "$job_id" ]; then
+                echo "$job_id" >> "$orphaned_jobs_file"
+              fi
+            else
+              echo "[OK] Found: $job_name in $(basename "$job_file_found")"
+            fi
+          done
+
+          echo ""
+          if [ $orphaned_count -eq 0 ]; then
+            echo "No orphaned jobs found. All Databricks jobs have corresponding definitions in the repository."
+          else
+            echo "Total orphaned jobs: $orphaned_count"
+            echo "These jobs exist in Databricks but have no definition file in the repository."
+            echo "Orphaned job IDs saved to: $orphaned_jobs_file"
+          fi
+
+      # Replaces ADO PublishPipelineArtifact 'pillar_repo'. In a single-repo setup the
+      # deploy job re-checks-out the code, so only the generated metadata must cross jobs.
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-metadata-greenchain
+          path: |
+            git_diff_file.txt
+            orphaned_jobs.txt
+          if-no-files-found: warn
+          include-hidden-files: false
