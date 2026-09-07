@@ -85,6 +85,24 @@ jobs:
           pip install unittest-xml-reporting
           databricks -v
 
+      - name: Verify Databricks credentials
+        run: |
+          missing=0
+          for v in DATABRICKS_HOST DATABRICKS_CLIENT_ID DATABRICKS_CLIENT_SECRET; do
+            if [ -z "${!v}" ]; then
+              echo "::error::$v is empty. Set it as a secret on the '${{ inputs.env }}' GitHub Environment (or repo). Expected repo secrets: DATABRICKS_HOST, DBR_CLIENT_ID, DBR_CLIENT_SECRET."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "All Databricks credential variables are present."
+          if databricks current-user me >/dev/null 2>&1; then
+            echo "Databricks authentication OK."
+          else
+            echo "::error::Databricks credentials are set but authentication failed. Verify the service principal client id/secret and host."
+            exit 1
+          fi
+
       - name: Show changes
         run: |
           line_break=$(printf '==%.0s' {1..50})
@@ -100,7 +118,11 @@ jobs:
             head_commit="${TAG}"
           fi
 
-          if [[ "${{ inputs.branchName }}" ]]; then
+          # First-time deploys (repo not yet in Databricks and no tag) yield no baseline.
+          if [ -z "$head_commit" ]; then
+            echo "::warning::Could not determine a baseline commit (repo '${REPO_FOLDER}' not found in Databricks and no '${TAG}' tag). Producing an empty diff."
+            : > git_diff_file.txt
+          elif [[ "${{ inputs.branchName }}" ]]; then
             diff_file=$(git diff --name-status --diff-filter=AMRC "$head_commit" "${{ inputs.commitID }}" | grep -v '^R100' | grep -v '^C100' | grep "\.sql\|\.py\|\.ipynb" | awk '{$1=""; print substr($0,2)}' | tr '\n' ' ')
             echo "$diff_file" > git_diff_file.txt
             echo "Files with difference between commit $head_commit in Databricks"
