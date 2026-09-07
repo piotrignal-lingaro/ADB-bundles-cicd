@@ -4,6 +4,11 @@ name: cicd
 
 run-name: "${{ github.run_number }}_CDL_${{ inputs.env }}_Greenchain"
 
+# Caller must grant at least the permissions the reusable workflows request.
+# The deploy workflow's `tag` job pushes a git tag and needs contents: write.
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
     inputs:
