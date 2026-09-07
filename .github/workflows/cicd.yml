@@ -1,0 +1,47 @@
+# Orchestrator - GitHub Actions equivalent of .ado/cicd-core.yaml (manual pipeline).
+# Wires the generic build + deploy reusable workflows together.
+name: cicd
+
+run-name: "${{ github.run_number }}_CDL_${{ inputs.env }}_Greenchain"
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: 'Environment'
+        type: choice
+        default: DEV
+        options: [DEV, QA, PROD]
+      mode:
+        description: 'Execution Mode'
+        type: choice
+        default: info
+        options: [execute, info]
+      runWithIon:
+        description: 'Run with Ion esdbrorch(non)prod'
+        type: boolean
+        default: false
+
+# ADO stages PrepareBuild -> Deploy become two reusable-workflow jobs.
+# Pillar (Greenchain) and Databricks repo folder are fixed inside the reusable workflows.
+jobs:
+  PrepareBuild:
+    uses: ./.github/workflows/build.yml
+    with:
+      env: ${{ inputs.env }}
+      mode: ${{ inputs.mode }}
+      branchName: ${{ github.ref_name }}
+      commitID: ${{ github.sha }}
+      deployWithIon: ${{ inputs.runWithIon }}
+    secrets: inherit
+
+  Deploy:
+    needs: PrepareBuild
+    uses: ./.github/workflows/deploy.yml
+    with:
+      env: ${{ inputs.env }}
+      mode: ${{ inputs.mode }}
+      branchName: ${{ github.ref_name }}
+      commitID: ${{ github.sha }}
+      deployWithIon: ${{ inputs.runWithIon }}
+    secrets: inherit
