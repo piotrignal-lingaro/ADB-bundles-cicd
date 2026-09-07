@@ -1,0 +1,258 @@
+# Reusable deploy workflow - GitHub Actions equivalent of .ado/deploy-job-template.yml
+# Deploys jobs / DDL / UC tags to Databricks, then tags the commit.
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        description: 'Full environment, e.g. CDL_DEV'
+        type: string
+        required: true
+      branchName:
+        type: string
+        required: true
+      commitID:
+        type: string
+        required: true
+      mode:
+        type: string
+        required: true
+      deployWithIon:
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  deploy:
+    name: Deployment Greenchain to ${{ inputs.env }}
+    # ADO: condition: eq(mode, 'execute')
+    if: ${{ inputs.mode == 'execute' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    # GitHub Environment => approvals (ADO `environment:`) + per-env Databricks secrets.
+    environment: ${{ inputs.env }}
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DBR_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DBR_CLIENT_SECRET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commitID }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      # Restores git_diff_file.txt / orphaned_jobs.txt produced by the build workflow
+      # (ADO DownloadPipelineArtifact 'pillar_repo').
+      - name: Download build metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: build-metadata-greenchain
+          path: .
+
+      - name: Compute deployment variables
+        run: |
+          # Layer is fixed to CDL; inputs.env is the short stage (DEV/QA/PROD).
+          # Databricks-facing names keep the CDL_<stage> form.
+          LAYER=CDL
+          ENV_STAGE="${{ inputs.env }}"
+          FULL_ENV="${LAYER}_${ENV_STAGE}"
+          PILLAR_UPPER=$(echo 'Greenchain' | tr '[:lower:]' '[:upper:]')
+          echo "LAYER=$LAYER" >> "$GITHUB_ENV"
+          echo "ENV_STAGE=$ENV_STAGE" >> "$GITHUB_ENV"
+          echo "ENV_LOWER=$(echo "$ENV_STAGE" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+          echo "PILLAR_UPPER=$PILLAR_UPPER" >> "$GITHUB_ENV"
+          echo "TAG=${FULL_ENV}_${PILLAR_UPPER}" >> "$GITHUB_ENV"
+          echo "REPO_FOLDER=/Repos/CodeRepo-${PILLAR_UPPER}/ADB-bundles-cicd" >> "$GITHUB_ENV"
+          # Databricks scripts compare against the capitalized string "True".
+          if [ "${{ inputs.deployWithIon }}" == "true" ]; then
+            echo "DEPL_WITH_ION=True" >> "$GITHUB_ENV"
+          else
+            echo "DEPL_WITH_ION=False" >> "$GITHUB_ENV"
+          fi
+
+      - name: Use Python 3.x
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install databricks-cli
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+          sudo apt-get install -y jq
+          pip install wheel
+          pip install unittest-xml-reporting
+          databricks -v
+
+      - name: Update Repo
+        run: |
+          output=0
+          if [[ "${{ inputs.branchName }}" ]] && [[ "${{ inputs.mode }}" == 'execute' ]]; then
+            databricks repos update "${REPO_FOLDER}" --branch "${{ inputs.branchName }}"
+            output=$?
+          fi
+          exit $output
+
+      - name: Deploy Greenchain jobs
+        env:
+          TARGET_ENV: ${{ env.ENV_STAGE }}
+          REPO_NOTEBOOK_PATH: ${{ env.REPO_FOLDER }}/notebook_jobs
+          JOB_FILE_PATH: config/jobs/greenchain
+          SCHEDULE_CONFIG_PATH: config/jobs/greenchain/schedules/${{ env.ENV_STAGE }}
+          JOBS_ACL_FILE_DEFAULT: cicd/jobs/${{ env.ENV_STAGE }}/access_control.json
+          JOBS_ACL_FILE_PILLAR: cicd/jobs/${{ env.ENV_STAGE }}/access_control_${{ env.TAG }}.json
+          RUN_AS_FILE: cicd/jobs/${{ env.ENV_STAGE }}/run_as.json
+          PILLAR: greenchain
+        run: |
+          exit_code=0
+          cicd_job_script_path="cicd/scripts/deploy_jobs.sh"
+          if [ -f "$cicd_job_script_path" ]; then
+            echo "Run shell script: $(basename "$cicd_job_script_path")"
+            chmod +x "$cicd_job_script_path"
+            "./$cicd_job_script_path"
+            exit_code=$?
+          else
+            echo "[Error] Missing $cicd_job_script_path file"
+            exit_code=1
+          fi
+          exit $exit_code
+
+      - name: Prepare diff file
+        run: |
+          file=git_diff_file.txt
+          echo "Setting up the timestamp for foldername"
+          file_date=$(date +"%Y%m%d-%H%M%S")
+          databricks fs cp git_diff_file.txt "dbfs:/ADO_deployment/${file_date}_diff_file.txt"
+          databricks fs cp git_diff_file.txt "dbfs:/Volumes/cdl_esg_${ENV_LOWER}/tech/ado/${file_date}_diff_file.txt"
+          echo "commit_diff=${file_date}_diff_file.txt" >> "$GITHUB_ENV"
+          cat "$file"
+
+      - name: Tag orphaned jobs
+        run: |
+          orphaned_jobs_file="orphaned_jobs.txt"
+
+          if [ ! -f "$orphaned_jobs_file" ]; then
+            echo "[Info] No orphaned jobs file found. Skipping orphaned jobs tagging."
+            exit 0
+          fi
+
+          orphaned_count=$(wc -l < "$orphaned_jobs_file" | tr -d ' ')
+
+          if [ "$orphaned_count" -eq 0 ]; then
+            echo "[Info] No orphaned jobs to tag."
+            exit 0
+          fi
+
+          echo "Found $orphaned_count orphaned job(s). Tagging them with delete_reason=ORPHANED..."
+          echo ""
+
+          while IFS= read -r job_id; do
+            if [ -z "$job_id" ]; then
+              continue
+            fi
+            echo "Tagging job ID: $job_id"
+            databricks jobs update --json '{"job_id":'"$job_id"',"new_settings":{"tags": {"delete_reason":"ORPHANED"}}}'
+            if [ $? -eq 0 ]; then
+              echo "[SUCCESS] Tagged job $job_id"
+            else
+              echo "[WARNING] Failed to tag job $job_id"
+            fi
+          done < "$orphaned_jobs_file"
+
+          echo ""
+          echo "Completed tagging orphaned jobs."
+
+      - name: Run DDL to deploy objects to schema
+        env:
+          TARGET_ENV: ${{ env.ENV_STAGE }}
+          LAYER: ${{ env.LAYER }}
+          REPO_NOTEBOOK_PATH: /Repos/CodeRepo-CORE/ESG
+          JOB_FILE: cicd/jobs/ddl_deploy.json
+          JOBS_ACL_FILE: cicd/jobs/${{ env.ENV_STAGE }}/access_control.json
+          JOBS_ACL_ION_FILE: cicd/jobs/${{ env.ENV_STAGE }}/access_control_ion.json
+          MODE: ${{ inputs.mode }}
+          PILLAR: ${{ env.PILLAR_UPPER }}
+          DIFF_FILE: ${{ env.commit_diff }}
+          REPO_NAME: ADB-bundles-cicd
+        run: |
+          file=git_diff_file.txt
+          exit_code=0
+          cicd_ddl_script_path="cicd/scripts/deploy_ddl.sh"
+          if [ -f "$cicd_ddl_script_path" ]; then
+            if grep -q "DDL" "$file"; then
+              echo "Run shell script: $(basename "$cicd_ddl_script_path")"
+              chmod +x "$cicd_ddl_script_path"
+              echo "Running DDL creation job:"
+              "./$cicd_ddl_script_path"
+              exit_code=$?
+            else
+              echo "[Info] No DDL changes"
+            fi
+          else
+            echo "[Error] Missing $cicd_ddl_script_path file"
+            exit_code=1
+          fi
+          exit $exit_code
+
+      - name: Run DDL UC Tags to apply tags on tables
+        env:
+          TARGET_ENV: ${{ env.ENV_STAGE }}
+          LAYER: ${{ env.LAYER }}
+          REPO_NOTEBOOK_PATH: /Repos/CodeRepo-CORE/ESG
+          JOB_FILE: cicd/jobs/ddl_uc_tags_deploy.json
+          JOBS_ACL_FILE: cicd/jobs/${{ env.ENV_STAGE }}/access_control.json
+          JOBS_ACL_ION_FILE: cicd/jobs/${{ env.ENV_STAGE }}/access_control_ion.json
+          MODE: ${{ inputs.mode }}
+          PILLAR: ${{ env.PILLAR_UPPER }}
+          DIFF_FILE: ${{ env.commit_diff }}
+          REPO_NAME: ADB-bundles-cicd
+        run: |
+          exit_code=0
+          cicd_ddl_uc_tags_script_path="cicd/scripts/deploy_ddl_uc_tags.sh"
+          if [ -f "$cicd_ddl_uc_tags_script_path" ]; then
+            if find "notebook_jobs" -name "uc_tags.json" -type f | grep -q .; then
+              echo "Run shell script: $(basename "$cicd_ddl_uc_tags_script_path")"
+              chmod +x "$cicd_ddl_uc_tags_script_path"
+              echo "Running DDL UC Tags job:"
+              "./$cicd_ddl_uc_tags_script_path"
+              exit_code=$?
+            else
+              echo "No uc_tags.json found in notebook_jobs, skipping DDL UC Tags job"
+            fi
+          else
+            echo "[Error] Missing $cicd_ddl_uc_tags_script_path file"
+            exit_code=1
+          fi
+          exit $exit_code
+
+  tag:
+    name: Tag Greenchain for ${{ inputs.env }}
+    needs: deploy
+    if: ${{ inputs.mode == 'execute' && needs.deploy.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tag repo (fresh auth)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commitID }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: true
+
+      - name: Add Tag
+        run: |
+          PILLAR_UPPER=$(echo 'Greenchain' | tr '[:lower:]' '[:upper:]')
+          TAG="CDL_${{ inputs.env }}_${PILLAR_UPPER}"
+          echo "Assign tag: $TAG"
+          set -euo pipefail
+          git config --global user.email "esg_cicd@pg.com"
+          git config --global user.name "CDL ESG"
+          git fetch origin "${{ inputs.commitID }}" --depth=1
+          git checkout --detach "${{ inputs.commitID }}"
+          git tag -f "$TAG" "${{ inputs.commitID }}"
+          git push origin "refs/tags/$TAG" --force
