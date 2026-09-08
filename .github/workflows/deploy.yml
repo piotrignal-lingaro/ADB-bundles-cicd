@@ -124,8 +124,7 @@ jobs:
           file=git_diff_file.txt
           echo "Setting up the timestamp for foldername"
           file_date=$(date +"%Y%m%d-%H%M%S")
-          databricks fs cp git_diff_file.txt "dbfs:/ADO_deployment/${file_date}_diff_file.txt"
-          databricks fs cp git_diff_file.txt "dbfs:/Volumes/cdl_esg_${ENV_LOWER}/tech/ado/${file_date}_diff_file.txt"
+          databricks fs cp git_diff_file.txt "dbfs:/Volumes/app_greenchain_${ENV_LOWER}/tech/ghactions/${file_date}_diff_file.txt"
           echo "commit_diff=${file_date}_diff_file.txt" >> "$GITHUB_ENV"
           cat "$file"
 
