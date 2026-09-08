@@ -124,7 +124,22 @@ jobs:
           file=git_diff_file.txt
           echo "Setting up the timestamp for foldername"
           file_date=$(date +"%Y%m%d-%H%M%S")
-          databricks fs cp git_diff_file.txt "dbfs:/Volumes/app_greenchain_${ENV_LOWER}/tech/ghactions/${file_date}_diff_file.txt"
+
+          # UC Volumes path is /Volumes/<catalog>/<schema>/<volume>/<file...>.
+          # The catalog/schema/volume must already exist and the service principal
+          # needs USE CATALOG/USE SCHEMA + WRITE VOLUME on it; `fs cp` won't create it.
+          volume_dest="dbfs:/Volumes/app_greenchain_${ENV_LOWER}/tech/ghactions/${file_date}_diff_file.txt"
+
+          echo "Copying $file to $volume_dest"
+          if ! cp_out=$(databricks fs cp "$file" "$volume_dest" 2>&1); then
+            echo "::group::databricks fs cp error"
+            echo "$cp_out"
+            echo "::endgroup::"
+            echo "::error::Failed to copy diff file to UC Volume '$volume_dest'."
+            echo "Verify the volume exists (catalog='app_greenchain_${ENV_LOWER}', schema='tech', volume='ghactions') and the service principal has USE CATALOG/USE SCHEMA + WRITE VOLUME permissions."
+            echo "List available volumes with: databricks volumes list app_greenchain_${ENV_LOWER} tech"
+            exit 1
+          fi
           echo "commit_diff=${file_date}_diff_file.txt" >> "$GITHUB_ENV"
           cat "$file"
 
