@@ -1,0 +1,12 @@
+{ 
+  "access_control_list": [
+  {
+      "service_principal_name": "a0f429a5-75ee-4b33-ae13-b40cf157ccc5",
+      "permission_level": "IS_OWNER"
+  },
+  {
+    "group_name": "users",
+    "permission_level": "CAN_MANAGE"
+  }
+  ]
+}

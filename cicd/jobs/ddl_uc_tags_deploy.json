@@ -1,0 +1,43 @@
+{
+  "name": "[CICD] - DDL UC Tags Pipeline",
+  "email_notifications": {
+    "no_alert_for_skipped_runs": false
+  },
+  "webhook_notifications": {},
+  "timeout_seconds": 0,
+  "max_concurrent_runs": 1,
+  "tasks": [
+    {
+      "task_key": "CICD_ESG_uc_tags_pipeline",
+      "run_if": "ALL_SUCCESS",
+      "notebook_task": {
+        "notebook_path": "/Repos/CodeRepo-CORE/ESG_Core/cicd/notebooks/deploy_ddl_uc_tags",
+        "base_parameters": {
+          "mode": "info",
+          "pillar": ""
+        },
+        "source": "WORKSPACE"
+      },
+      "max_retries": 1,
+      "min_retry_interval_millis": 60000,
+      "retry_on_timeout": true,
+      "disable_auto_optimization": false,
+      "timeout_seconds": 0,
+      "email_notifications": {},
+      "webhook_notifications": {},
+      "environment_key": "Default"
+    }
+  ],
+  "queue": {
+    "enabled": true
+  },
+  "environments": [
+    {
+      "environment_key": "Default",
+      "spec": {
+        "environment_version": "4"
+      }
+    }
+  ],
+  "performance_target": "PERFORMANCE_OPTIMIZED"
+}

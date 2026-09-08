@@ -1,0 +1,12 @@
+{ 
+  "access_control_list": [
+  {
+      "user_name":  "esgdbrorchnonprod.im@pg.com",
+      "permission_level": "IS_OWNER"
+  },
+  {
+    "group_name": "users",
+    "permission_level": "CAN_MANAGE"
+  }
+  ]
+}

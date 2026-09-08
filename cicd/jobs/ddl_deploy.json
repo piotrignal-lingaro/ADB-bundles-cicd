@@ -1,0 +1,87 @@
+{
+    "name": "[CICD] - DDL Deployment Pipeline",
+    "email_notifications": {},
+    "webhook_notifications": {},
+    "timeout_seconds": 0,
+    "max_concurrent_runs": 1,
+    "tasks": [
+        {
+            "task_key": "CICD_ESG_deployment_pipeline",
+            "run_if": "ALL_SUCCESS",
+            "notebook_task": {
+              "notebook_path": "/Repos/CodeRepo-CORE/ESG_Core/cicd/notebooks/deploy_ddl",
+              "base_parameters": {
+                "diff-file": "",
+                "pillar": "",
+                "mode": "info"
+              },
+              "source": "WORKSPACE"
+            },
+            "job_cluster_key": "deploy_DDL",
+            "libraries": [
+                {
+                  "whl": "/Volumes/cdl_esg_dev/tech/lib/esg_utils-1.0.0-py3-none-any.whl"
+                }
+            ],            
+            "max_retries": 1,
+            "min_retry_interval_millis": 120000,
+            "retry_on_timeout": true,
+            "timeout_seconds": 7200,
+            "email_notifications": {}
+        }
+    ],
+    "job_clusters": [
+        {
+            "job_cluster_key": "deploy_DDL",
+            "new_cluster": {
+                "spark_version": "17.3.x-scala2.13",
+                "spark_conf": {
+                    "fs.azure.account.oauth2.client.secret.blobcdhlaunchpades30.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-esg-lp-app-es-key}}",
+                    "fs.azure.account.oauth2.client.endpoint.dpstcdh60b167b4.dfs.core.windows.net": "https://login.microsoftonline.com/3596192b-fdf5-4e2c-a6fa-acb706c963d8/oauth2/token",
+                    "fs.azure.account.oauth2.client.id.adlsstcdatahubprod01.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-stc-app-es-id}}",
+                    "fs.azure.account.oauth2.client.secret.blobcdhlaunchpades30ut.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-esg-lp-app-es-key}}",
+                    "spark.databricks.queryWatchdog.maxHivePartitions": "0",
+                    "spark.databricks.delta.preview.enabled": "true",
+                    "fs.azure.account.oauth2.client.secret.dpstcdh60b167b4.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-cep-app-es-key}}",
+                    "fs.azure.account.oauth2.client.endpoint.blobcdhlaunchpades30.dfs.core.windows.net": "https://login.microsoftonline.com/3596192b-fdf5-4e2c-a6fa-acb706c963d8/oauth2/token",
+                    "fs.azure.account.oauth2.client.endpoint.blobcdhlaunchpades30ut.dfs.core.windows.net": "https://login.microsoftonline.com/3596192b-fdf5-4e2c-a6fa-acb706c963d8/oauth2/token",
+                    "fs.azure.account.auth.type.dpstcdh60b167b4.dfs.core.windows.net": "OAuth",
+                    "fs.azure.account.oauth.provider.type.dpstcdh60b167b4.dfs.core.windows.net": "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
+                    "fs.azure.account.oauth2.client.id.blobcdhlaunchpades30.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-esg-lp-app-es-id}}",
+                    "fs.azure.account.auth.type.blobcdhlaunchpades30dv.dfs.core.windows.net": "OAuth",
+                    "fs.azure.account.oauth2.client.id.blobcdhlaunchpades30ut.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-esg-lp-app-es-id}}",
+                    "fs.azure.account.oauth.provider.type.blobcdhlaunchpades30dv.dfs.core.windows.net": "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
+                    "fs.azure.account.oauth2.client.secret.blobcdhlaunchpades30dv.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-esg-lp-app-es-key}}",
+                    "fs.azure.account.oauth2.client.endpoint.blobcdhlaunchpades30dv.dfs.core.windows.net": "https://login.microsoftonline.com/3596192b-fdf5-4e2c-a6fa-acb706c963d8/oauth2/token",
+                    "fs.azure.account.oauth.provider.type.adlsstcdatahubprod01.dfs.core.windows.net": "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
+                    "fs.azure.account.auth.type.adlsstcdatahubprod01.dfs.core.windows.net": "OAuth",
+                    "fs.azure.account.oauth2.client.secret.adlsstcdatahubprod01.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-stc-app-es-key}}",
+                    "fs.azure.account.oauth2.client.id.blobcdhlaunchpades30dv.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-esg-lp-app-es-id}}",
+                    "fs.azure.account.oauth2.client.id.dpstcdh60b167b4.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-cep-app-es-id}}",
+                    "fs.azure.account.oauth2.client.endpoint.adlsstcdatahubprod01.dfs.core.windows.net": "https://login.microsoftonline.com/3596192b-fdf5-4e2c-a6fa-acb706c963d8/oauth2/token",
+                    "fs.azure.account.oauth.provider.type.blobcdhlaunchpades30.dfs.core.windows.net": "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
+                    "fs.azure.account.auth.type.blobcdhlaunchpades30.dfs.core.windows.net": "OAuth",
+                    "fs.azure.account.auth.type.blobcdhlaunchpades30ut.dfs.core.windows.net": "OAuth",
+                    "fs.azure.account.oauth.provider.type.blobcdhlaunchpades30ut.dfs.core.windows.net": "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider",
+                    "fs.azure.account.oauth2.client.endpoint.dnstcdh32ae2a98.dfs.core.windows.net": "https://login.microsoftonline.com/3596192b-fdf5-4e2c-a6fa-acb706c963d8/oauth2/token",                              
+                    "fs.azure.account.oauth2.client.secret.dnstcdh32ae2a98.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-cep-app-es-ut-key}}",   
+                    "fs.azure.account.auth.type.dnstcdh32ae2a98.dfs.core.windows.net": "OAuth",      
+                    "fs.azure.account.oauth.provider.type.dnstcdh32ae2a98.dfs.core.windows.net": "org.apache.hadoop.fs.azurebfs.oauth2.ClientCredsTokenProvider", 
+                    "fs.azure.account.oauth2.client.id.dnstcdh32ae2a98.dfs.core.windows.net": "{{secrets/esg-kv-scope/az-sp-cep-app-es-ut-id}}"                                                                      
+                },              
+                "azure_attributes": {
+                    "availability": "ON_DEMAND_AZURE"
+                },
+                "node_type_id": "Standard_DS3_v2",
+                "data_security_mode": "USER_ISOLATION",                
+                "enable_elastic_disk": true,
+                "num_workers": 1
+            }
+        }
+    ],
+    "tags": {
+        "frequency": "Release",
+        "version": "1.0.0"
+    },
+    "format": "MULTI_TASK"
+}
