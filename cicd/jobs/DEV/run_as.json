@@ -1,35 +1,5 @@
 {
     "default": {
-        "service_principal_name": "a0f429a5-75ee-4b33-ae13-b40cf157ccc5"
-    },
-    "nda":  {
-        "user_name":  "esgdbrorchnonprod.im@pg.com"
-    },
-    "fsc":  {
-       "user_name":  "esgdbrorchnonprod.im@pg.com"
-    },
-    "mafda":  {
-        "user_name": "esgdbrorchnonprod.im@pg.com"
-    },
-    "qmdm":  {
-        "user_name": "qmdm.im@pg.com"
-    },
-    "dq":  {
-        "user_name": "esgdbrorchnonprod.im@pg.com"
-    },
-    "pda":  {
-        "user_name": "esgdbrorchnonprod.im@pg.com"
-    },
-    "cedar":  {
-        "user_name": "esgdbrorchnonprod.im@pg.com"
-    },
-    "atlas":  {
-        "user_name": "esgdbrorchnonprod.im@pg.com"
-    },
-    "ppwr":  {
-        "user_name": "esgdbrorchnonprod.im@pg.com"
-    },
-    "biofuelledger":  {
-        "user_name": "esgbiofuelledger.im@pg.com"
+        "service_principal_name": "23dd89dd-efa3-47b1-880d-e6a53c20c432"
     }
 }
