@@ -1,7 +1,7 @@
 { 
   "access_control_list": [
   {
-      "service_principal_name": "a0f429a5-75ee-4b33-ae13-b40cf157ccc5",
+      "service_principal_name": "23dd89dd-efa3-47b1-880d-e6a53c20c432",
       "permission_level": "IS_OWNER"
   },
   {
