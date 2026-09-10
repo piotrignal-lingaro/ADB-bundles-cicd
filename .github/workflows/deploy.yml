@@ -30,11 +30,13 @@ jobs:
     if: ${{ inputs.mode == 'execute' }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    # GitHub Environment => approvals (ADO `environment:`) + per-env Databricks secrets.
+    # GitHub Environment => approvals (ADO `environment:`) + per-env Databricks credentials.
     environment: ${{ inputs.env }}
     env:
-      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-      DATABRICKS_CLIENT_ID: ${{ secrets.DBR_CLIENT_ID }}
+      # DATABRICKS_HOST and DATABRICKS_CLIENT_ID are non-sensitive environment
+      # variables (GitHub Actions `vars`); only the client secret stays a secret.
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DBR_CLIENT_ID }}
       DATABRICKS_CLIENT_SECRET: ${{ secrets.DBR_CLIENT_SECRET }}
     steps:
       - name: Checkout
@@ -54,10 +56,11 @@ jobs:
 
       - name: Compute deployment variables
         run: |
-          # Layer is fixed to CDL; inputs.env is the short stage (DEV/QA/PROD).
-          # Databricks-facing names keep the CDL_<stage> form.
+          # Layer is fixed to CDL; inputs.env is the short stage (dev/qa/prod).
+          # ENV_STAGE is uppercased for Databricks-facing names (tags, config folders),
+          # ENV_LOWER is used for lowercase resources such as UC catalog names.
           LAYER=CDL
-          ENV_STAGE="${{ inputs.env }}"
+          ENV_STAGE=$(echo "${{ inputs.env }}" | tr '[:lower:]' '[:upper:]')
           FULL_ENV="${LAYER}_${ENV_STAGE}"
           PILLAR_UPPER=$(echo 'Greenchain' | tr '[:lower:]' '[:upper:]')
           echo "LAYER=$LAYER" >> "$GITHUB_ENV"
@@ -261,7 +264,8 @@ jobs:
       - name: Add Tag
         run: |
           PILLAR_UPPER=$(echo 'Greenchain' | tr '[:lower:]' '[:upper:]')
-          TAG="CDL_${{ inputs.env }}_${PILLAR_UPPER}"
+          ENV_UPPER=$(echo "${{ inputs.env }}" | tr '[:lower:]' '[:upper:]')
+          TAG="CDL_${ENV_UPPER}_${PILLAR_UPPER}"
           echo "Assign tag: $TAG"
           set -euo pipefail
           git config --global user.email "esg_cicd@pg.com"

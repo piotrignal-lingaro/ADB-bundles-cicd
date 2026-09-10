@@ -15,8 +15,8 @@ on:
       env:
         description: 'Environment'
         type: choice
-        default: DEV
-        options: [DEV, QA, PROD]
+        default: dev
+        options: [dev, qa, prod]
       mode:
         description: 'Execution Mode'
         type: choice

@@ -35,8 +35,10 @@ jobs:
       # an uppercased form (PILLAR_UPPER) is derived for tags and repo paths.
       PILLAR: greenchain
       REPO_NAME: ADB-bundles-cicd
-      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-      DATABRICKS_CLIENT_ID: ${{ secrets.DBR_CLIENT_ID }}
+      # DATABRICKS_HOST and DATABRICKS_CLIENT_ID are non-sensitive environment
+      # variables (GitHub Actions `vars`); only the client secret stays a secret.
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DBR_CLIENT_ID }}
       DATABRICKS_CLIENT_SECRET: ${{ secrets.DBR_CLIENT_SECRET }}
     steps:
       # Single checkout replaces ADO `checkout: CoreResources` + `checkout: self`
@@ -50,10 +52,11 @@ jobs:
 
       - name: Compute deployment variables
         run: |
-          # Layer is fixed to CDL; the GitHub Environment is the short stage (DEV/QA/PROD),
-          # while Databricks-facing names keep the CDL_<stage> form.
+          # Layer is fixed to CDL; the GitHub Environment is the short stage (dev/qa/prod),
+          # while Databricks-facing names (tags/repo paths) keep the CDL_<STAGE> form.
           LAYER=CDL
-          FULL_ENV="${LAYER}_${{ inputs.env }}"
+          ENV_UPPER=$(echo "${{ inputs.env }}" | tr '[:lower:]' '[:upper:]')
+          FULL_ENV="${LAYER}_${ENV_UPPER}"
           PILLAR_UPPER=$(echo "$PILLAR" | tr '[:lower:]' '[:upper:]')
           echo "PILLAR_UPPER=$PILLAR_UPPER" >> "$GITHUB_ENV"
           echo "TAG=${FULL_ENV}_${PILLAR_UPPER}" >> "$GITHUB_ENV"
@@ -90,7 +93,7 @@ jobs:
           missing=0
           for v in DATABRICKS_HOST DATABRICKS_CLIENT_ID DATABRICKS_CLIENT_SECRET; do
             if [ -z "${!v}" ]; then
-              echo "::error::$v is empty. Set it as a secret on the '${{ inputs.env }}' GitHub Environment (or repo). Expected repo secrets: DATABRICKS_HOST, DBR_CLIENT_ID, DBR_CLIENT_SECRET."
+              echo "::error::$v is empty. Set DATABRICKS_HOST and DBR_CLIENT_ID as variables (vars) and DBR_CLIENT_SECRET as a secret on the '${{ inputs.env }}' GitHub Environment (or repo)."
               missing=1
             fi
           done
